@@ -45,7 +45,6 @@ class Linker {
     }
 
     static func link(from: String, to: String) {
-//        shell("ln -s \(from) \(to)")
         let at = URL(fileURLWithPath: from)
         let withDestinationURL = URL(fileURLWithPath: to)
         do {
@@ -53,22 +52,5 @@ class Linker {
         } catch {
             print("Error creating symlink")
         }
-    }
-    
-    static func shell(_ command: String) -> String {
-        let task = Process()
-        let pipe = Pipe()
-
-        task.standardOutput = pipe
-        task.standardError = pipe
-        task.arguments = ["-c", command]
-        task.launchPath = "/bin/zsh"
-        task.standardInput = nil
-        task.launch()
-        task.waitUntilExit()  // Wait for the command to complete
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-
-        return String(data: data, encoding: .utf8) ?? ""
     }
 }

@@ -8,6 +8,29 @@ struct MacDefaultListView: View {
     @State private var sidebarVisible = true
 
     var body: some View {
+        VStack(spacing: 0) {
+            TabActionBar(title: "Mac Defaults") {
+                Button(action: { withAnimation { sidebarVisible.toggle() } }) {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Sidebar")
+
+                Button(action: applyAll) {
+                    Label("Apply All", systemImage: "checkmark.circle")
+                }
+                .help("Apply all captured defaults to the system")
+
+                Button(action: addItem) {
+                    Label("Add", systemImage: "plus")
+                }
+            }
+
+            macDefaultsContent
+        }
+    }
+
+    private var macDefaultsContent: some View {
         HStack(spacing: 0) {
             if sidebarVisible {
                 Group {
@@ -88,25 +111,6 @@ struct MacDefaultListView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-        }
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: { withAnimation { sidebarVisible.toggle() } }) {
-                    Label("Toggle Sidebar", systemImage: "sidebar.left")
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                Button(action: applyAll) {
-                    Label("Apply All", systemImage: "checkmark.circle")
-                }
-                .help("Apply all captured defaults to the system")
-            }
-            ToolbarItem(placement: .automatic) {
-                Button(action: addItem) {
-                    Label("Add", systemImage: "plus")
-                }
-            }
         }
     }
 

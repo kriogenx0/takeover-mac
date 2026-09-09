@@ -4,12 +4,13 @@ struct MacDefaultInstaller {
 
     @MainActor
     private static func readSystemValue(macDefault: MacDefault) -> String {
-        let result = Linker.shell(macDefault.readCommand)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let notFound = result.isEmpty
-            || result.contains("does not exist")
-            || result.contains("The domain/defaults pair")
-        return notFound ? "" : result
+        let result = Proc.run("/usr/bin/defaults", macDefault.readArguments)
+        let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notFound = !result.ok
+            || output.isEmpty
+            || output.contains("does not exist")
+            || output.contains("The domain/defaults pair")
+        return notFound ? "" : output
     }
 
     @discardableResult
@@ -31,12 +32,21 @@ struct MacDefaultInstaller {
 
     @MainActor
     static func apply(macDefault: MacDefault) {
-        guard !macDefault.value.isEmpty else { return }
-        let result = Linker.shell(macDefault.writeCommand)
-        print("Apply defaults result: \(result)")
+        guard let args = macDefault.writeArguments else { return }
+
+        let write = Proc.run("/usr/bin/defaults", args)
+        if write.ok {
+            print("Applied \(macDefault.domain) \(macDefault.key) = \(macDefault.value)")
+        } else {
+            print("⚠️ Failed to write \(macDefault.domain) \(macDefault.key): \(write.combined)")
+            return
+        }
+
         if !macDefault.postCommand.isEmpty {
-            let postResult = Linker.shell(macDefault.postCommand)
-            print("Post command result: \(postResult)")
+            let post = Shell.runTrusted(macDefault.postCommand)
+            if !post.ok {
+                print("⚠️ Post-command '\(macDefault.postCommand)' failed: \(post.text)")
+            }
         }
     }
 

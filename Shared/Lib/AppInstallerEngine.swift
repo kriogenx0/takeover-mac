@@ -36,6 +36,10 @@ struct DiscoveredApp: Identifiable {
 
 struct AppInstallerEngine {
 
+    private static let ditto = "/usr/bin/ditto"
+    private static let hdiutil = "/usr/bin/hdiutil"
+    private static let installerTool = "/usr/sbin/installer"
+
     static func scan(at path: String) -> [DiscoveredApp] {
         let expanded = PathUtility.expandTildeToRealHome(path)
         let dirURL = URL(fileURLWithPath: expanded)
@@ -82,39 +86,29 @@ struct AppInstallerEngine {
         guard FileManager.default.fileExists(atPath: appPath) else {
             return (false, "Not found in /Applications")
         }
-        let script = "do shell script \"rm -rf \" & quoted form of \"\(appPath)\" with administrator privileges"
-        if let err = runAppleScript(script) { return (false, err) }
+        do {
+            // Unprivileged first (works when /Applications is group-writable),
+            // then fall back to an authenticated remove.
+            try FileOps.remove(appPath, allowPrivileged: true)
+        } catch {
+            return (false, error.localizedDescription)
+        }
         let success = !FileManager.default.fileExists(atPath: appPath)
         return (success, success ? "Uninstalled \(name)" : "Uninstall failed")
-    }
-
-    // Writes AppleScript to a temp file and runs via osascript — thread-safe, no shell quoting issues.
-    // Returns nil on success, or an error string on failure.
-    private static func runAppleScript(_ script: String) -> String? {
-        let tmpURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("takeover-\(UUID().uuidString).applescript")
-        guard (try? script.write(to: tmpURL, atomically: true, encoding: .utf8)) != nil else {
-            return "Could not write script file"
-        }
-        defer { try? FileManager.default.removeItem(at: tmpURL) }
-        let output = Linker.shell("osascript '\(tmpURL.path)'")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return output.isEmpty ? nil : output
     }
 
     private static func installZip(_ app: DiscoveredApp) -> (Bool, String, String?) {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("takeover-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let srcEsc = app.fileURL.path.replacingOccurrences(of: "'", with: "'\\''")
-        let dstEsc = tempDir.path.replacingOccurrences(of: "'", with: "'\\''")
-        let unzipResult = Linker.shell("ditto -xk '\(srcEsc)' '\(dstEsc)'")
-        if unzipResult.lowercased().contains("error") {
-            return (false, "Unzip failed: \(unzipResult)", nil)
+        do {
+            try Proc.require(ditto, ["-x", "-k", app.fileURL.path, tempDir.path])
+        } catch {
+            return (false, "Unzip failed: \(error.localizedDescription)", nil)
         }
 
         guard let appURL = findApp(in: tempDir) else {
-            Linker.shell("rm -rf '\(dstEsc)'")
             return (false, "No .app found in zip", nil)
         }
 
@@ -122,39 +116,37 @@ struct AppInstallerEngine {
         let destPath = "/Applications/\(appName).app"
 
         if FileManager.default.fileExists(atPath: destPath) {
-            Linker.shell("rm -rf '\(dstEsc)'")
             return (false, "\(appName) is already installed", appName)
         }
 
         let r = copyApp(from: appURL)
-        Linker.shell("rm -rf '\(dstEsc)'")
         return (r.0, r.1, appName)
     }
 
     private static func installDmg(_ app: DiscoveredApp) -> (Bool, String, String?) {
-        let escapedPath = app.fileURL.path.replacingOccurrences(of: "'", with: "'\\''")
-        let attachOutput = Linker.shell("hdiutil attach '\(escapedPath)' -nobrowse -noverify -plist")
-
-        guard let mountPath = parseMountPoint(from: attachOutput) else {
-            return (false, "Could not mount DMG: \(attachOutput.prefix(120))", nil)
+        let attach = Proc.run(hdiutil, ["attach", app.fileURL.path, "-nobrowse", "-noverify", "-plist"])
+        guard attach.ok, let mountPath = parseMountPoint(from: attach.stdout) else {
+            return (false, "Could not mount DMG: \(attach.combined.prefix(160))", nil)
         }
+        defer { Proc.run(hdiutil, ["detach", mountPath, "-quiet"]) }
 
         let mountURL = URL(fileURLWithPath: mountPath)
         guard let appURL = findApp(in: mountURL) else {
-            Linker.shell("hdiutil detach '\(mountPath)' -quiet")
             return (false, "No .app found in DMG", nil)
         }
 
         let appName = appURL.deletingPathExtension().lastPathComponent
         let r = copyApp(from: appURL)
-        Linker.shell("hdiutil detach '\(mountPath)' -quiet")
         return (r.0, r.1, appName)
     }
 
     private static func installPkg(_ app: DiscoveredApp) -> (Bool, String) {
-        let script = "do shell script \"installer -pkg \" & quoted form of \"\(app.fileURL.path)\" & \" -target /\" with administrator privileges"
-        if let err = runAppleScript(script) { return (false, "Install failed: \(err)") }
-        return (true, "Installed \(app.name)")
+        do {
+            try PrivilegedShell.run([installerTool, "-pkg", app.fileURL.path, "-target", "/"])
+            return (true, "Installed \(app.name)")
+        } catch {
+            return (false, "Install failed: \(error.localizedDescription)")
+        }
     }
 
     // Returns (success, message, bundleNameWithoutDotApp)
@@ -162,9 +154,20 @@ struct AppInstallerEngine {
         let appBundle = appURL.lastPathComponent
         let appName = appURL.deletingPathExtension().lastPathComponent
         let destPath = "/Applications/\(appBundle)"
-        let script = "do shell script \"ditto \" & quoted form of \"\(appURL.path)\" & \" \" & quoted form of \"\(destPath)\" with administrator privileges"
-        if let err = runAppleScript(script) { return (false, err, appName) }
-        let success = FileManager.default.fileExists(atPath: destPath)
+
+        // Try an unprivileged copy first; only prompt for authentication if that
+        // is actually denied.
+        var copied = Proc.run(ditto, [appURL.path, destPath]).ok
+        if !copied {
+            do {
+                try PrivilegedShell.run([ditto, appURL.path, destPath])
+                copied = true
+            } catch {
+                return (false, error.localizedDescription, appName)
+            }
+        }
+
+        let success = copied && FileManager.default.fileExists(atPath: destPath)
         return (success, success ? "Installed \(appName)" : "Installation failed", appName)
     }
 

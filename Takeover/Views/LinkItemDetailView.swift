@@ -291,86 +291,29 @@ struct LinkItemDetailView: View {
     }
 
     func openInFinder(path: String) {
-        print("DEBUG: openInFinder called with path: '\(path)'")
-
-        // Check if this is a "to" field (just a name) or a full path
-        let pathToOpen: String
+        // A "from" field is a full path; a "to" field is just a backup name.
+        let target: String
         if path.contains("/") {
-            // It's a full path (from field) - expand tilde using real home directory
-            print("DEBUG: Detected as full path (from field)")
-            let expandedPath = PathUtility.expandTildeToRealHome(path)
-            print("DEBUG: Expanded full path: '\(expandedPath)'")
-
-            // Check if it's a directory or file using shell command (not FileManager)
-            let escapedPath = expandedPath.replacingOccurrences(of: "'", with: "'\\''")
-            let existsResult = Linker.shell("test -e '\(escapedPath)' && echo 'yes' || echo 'no'").trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if existsResult == "yes" {
-                let isDirResult = Linker.shell("test -d '\(escapedPath)' && echo 'yes' || echo 'no'").trimmingCharacters(in: .whitespacesAndNewlines)
-                if isDirResult == "yes" {
-                    // It's a directory - open it directly
-                    print("DEBUG: Path is a directory, opening it directly")
-                    pathToOpen = expandedPath
-                } else {
-                    // It's a file - open parent directory
-                    print("DEBUG: Path is a file, opening parent directory")
-                    let url = URL(fileURLWithPath: expandedPath)
-                    let parentURL = url.deletingLastPathComponent()
-                    pathToOpen = parentURL.path
-                }
-            } else {
-                // Path doesn't exist - try parent directory
-                print("DEBUG: Path doesn't exist, opening parent directory")
-                let url = URL(fileURLWithPath: expandedPath)
-                let parentURL = url.deletingLastPathComponent()
-                pathToOpen = parentURL.path
-            }
+            target = PathUtility.expandTildeToRealHome(path)
         } else {
-            // It's just a name (to field), generate backup path with tilde unexpanded
-            print("DEBUG: Detected as name only (to field)")
-            // Use Config.backupPath (with ~) instead of expandedBackupPath
-            let fullPath = "\(Config.backupPath)/\(path)"
-            print("DEBUG: Full backup path (with ~): '\(fullPath)'")
-            // Use string manipulation to get parent directory (avoids URL expansion of ~)
-            pathToOpen = (fullPath as NSString).deletingLastPathComponent
-            print("DEBUG: Parent path (with ~): '\(pathToOpen)'")
+            target = PathUtility.expandTildeToRealHome("\(Config.backupPath)/\(path)")
         }
 
-        print("DEBUG: Final path to open: '\(pathToOpen)'")
-
-        // Expand tilde manually to avoid sandboxed environment issues
-        let expandedPath = PathUtility.expandTildeToRealHome(pathToOpen)
-        if expandedPath != pathToOpen {
-            print("DEBUG: Expanded path: '\(expandedPath)'")
+        // If the target exists, reveal (and select) it in Finder. Otherwise walk
+        // up to the nearest existing ancestor and open that.
+        if FileOps.exists(target) {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: target)])
+            return
         }
 
-        // Verify the path exists using shell command (not FileManager, to avoid sandbox issues)
-        var finalPath = expandedPath
-        let escapedCheckPath = finalPath.replacingOccurrences(of: "'", with: "'\\''")
-        let checkCommand = "test -e '\(escapedCheckPath)' && echo 'exists' || echo 'not_exists'"
-        print("DEBUG: Check command: \(checkCommand)")
-        let checkResult = Linker.shell(checkCommand).trimmingCharacters(in: .whitespacesAndNewlines)
-        print("DEBUG: Check result: '\(checkResult)'")
-
-        if checkResult != "exists" {
-            let parentPath = (finalPath as NSString).deletingLastPathComponent
-            print("DEBUG: Path '\(finalPath)' doesn't exist, trying parent: '\(parentPath)'")
-            finalPath = parentPath
-        } else {
-            print("DEBUG: Path exists according to shell check")
+        var ancestor = (target as NSString).deletingLastPathComponent
+        while !ancestor.isEmpty, ancestor != "/", !FileOps.exists(ancestor) {
+            ancestor = (ancestor as NSString).deletingLastPathComponent
         }
-
-        print("DEBUG: Opening path: '\(finalPath)'")
-
-        // Use shell open -R command to reveal in Finder (bypasses some sandbox restrictions)
-        let escapedPath = finalPath.replacingOccurrences(of: "'", with: "'\\''")
-        let command = "open -R '\(escapedPath)'"
-        print("DEBUG: Executing command: \(command)")
-        let result = Linker.shell(command)
-        if !result.isEmpty {
-            print("DEBUG: Command result: '\(result)'")
+        if FileOps.exists(ancestor) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: ancestor))
         } else {
-            print("DEBUG: Command succeeded")
+            print("openInFinder: no existing path found for '\(path)'")
         }
     }
 }

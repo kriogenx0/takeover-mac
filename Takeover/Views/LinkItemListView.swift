@@ -19,8 +19,45 @@ struct LinkItemListView: View {
     @State private var linkItemSelection: LinkItem? = nil
     @State private var showRecipesView = false
     @State private var sidebarVisible = true
+    @State private var errorMessage: String? = nil
 
     var body: some View {
+        VStack(spacing: 0) {
+            TabActionBar(title: "Links") {
+                Button(action: { withAnimation { sidebarVisible.toggle() } }) {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Sidebar")
+
+                Button(action: { showRecipesView = true }) {
+                    Label("Browse Recipes", systemImage: "books.vertical")
+                }
+                .help("Browse available app configurations")
+
+                Button(action: addItem) {
+                    Label("Add Item", systemImage: "plus")
+                }
+            }
+
+            linkItemsContent
+        }
+        .sheet(isPresented: $showRecipesView) {
+            RecipesView(onAdd: { newItem in
+                linkItemSelection = newItem
+            })
+        }
+        .alert(
+            "Link operation failed",
+            isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
+        ) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var linkItemsContent: some View {
         HStack(spacing: 0) {
             if sidebarVisible && !linkItems.isEmpty {
                 List(selection: $linkItemSelection) {
@@ -62,35 +99,12 @@ struct LinkItemListView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .toolbar(content: {
-            ToolbarItem(placement: .navigation) {
-                Button(action: { withAnimation { sidebarVisible.toggle() } }) {
-                    Label("Toggle Sidebar", systemImage: "sidebar.left")
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                Button(action: { showRecipesView = true }) {
-                    Label("Browse Recipes", systemImage: "books.vertical")
-                }
-                .help("Browse available app configurations")
-            }
-            ToolbarItem(placement: .automatic) {
-                Button(action: addItem) {
-                    Label("Add Item", systemImage: "plus")
-                }
-            }
-        })
-        .sheet(isPresented: $showRecipesView) {
-            RecipesView(onAdd: { newItem in
-                linkItemSelection = newItem
-            })
-        }
     }
 
     private func pullFromRepository() {
         Task {
-            let result = Linker.shell("git pull")
-            print("Git pull result: \(result)")
+            let result = Shell.runTrusted("git pull")
+            print("Git pull result: \(result.text)")
 
             // Reload settings after pull
             do {
@@ -127,11 +141,19 @@ struct LinkItemListView: View {
     }
 
     private func onRun(linkItem: LinkItem) -> Void {
-        LinkItemInstaller.install(linkItem: linkItem)
+        do {
+            try LinkItemInstaller.install(linkItem: linkItem)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func onUninstall(linkItem: LinkItem) -> Void {
-        LinkItemInstaller.uninstall(linkItem: linkItem)
+        do {
+            try LinkItemInstaller.uninstall(linkItem: linkItem)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func onSave(linkItem: LinkItem) -> Void {

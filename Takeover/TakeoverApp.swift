@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import AppKit
 
 @main
 struct TakeoverApp: App {
@@ -47,6 +48,11 @@ struct TakeoverApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .storageLocationChanged)) { _ in
                     Task { await loadFromStorage() }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    // The user may have just granted access in System Settings —
+                    // clear the stale nag so it doesn't keep reappearing.
+                    PermissionsHelper.refreshAfterActivation()
+                }
         }
         .modelContainer(sharedModelContainer)
 
@@ -62,38 +68,28 @@ struct TakeoverApp: App {
 
     @MainActor
     private func checkPermissionsOnStartup() async {
-        if !PermissionsHelper.hasFullDiskAccess() {
+        switch PermissionsHelper.fullDiskAccessStatus() {
+        case .granted:
+            print("✅ Full Disk Access granted")
+        case .unknown:
+            print("ℹ️ Full Disk Access status unknown (no probe file present) — not prompting")
+        case .denied:
             print("⚠️ Full Disk Access not granted")
             PermissionsHelper.showFullDiskAccessAlert()
-        } else {
-            print("✅ Full Disk Access granted")
         }
     }
 
     private func ensureStorageDirectoryExists() async {
         let iCloudPath = Config.expandedBackupPath
 
-        print("DEBUG: Checking storage directory at: \(iCloudPath)")
-
-        // Use shell command to check if directory exists
-        let escapedPath = iCloudPath.replacingOccurrences(of: "'", with: "'\\''")
-        let checkCommand = "test -d '\(escapedPath)' && echo 'exists' || echo 'not_exists'"
-        let checkResult = Linker.shell(checkCommand).trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if checkResult == "not_exists" {
-            // Directory doesn't exist, create it using osascript (has proper permissions)
-            let escapedPathForOsascript = iCloudPath.replacingOccurrences(of: "\"", with: "\\\"")
-            let createDirScript = "do shell script \"mkdir -p \\\"\(escapedPathForOsascript)\\\"\""
-            print("DEBUG: Creating directory with osascript")
-            let createResult = Linker.shell("osascript -e '\(createDirScript)'")
-
-            if createResult.isEmpty {
-                print("Created Takeover storage directory at: \(iCloudPath)")
-            } else {
-                print("DEBUG: osascript result: \(createResult)")
-            }
-        } else {
-            print("DEBUG: Storage directory already exists at: \(iCloudPath)")
+        if FileOps.isDirectory(iCloudPath) {
+            return
+        }
+        do {
+            try FileOps.makeDirectory(iCloudPath)
+            print("Created Takeover storage directory at: \(iCloudPath)")
+        } catch {
+            print("⚠️ Could not create Takeover storage directory at \(iCloudPath): \(error.localizedDescription)")
         }
     }
 

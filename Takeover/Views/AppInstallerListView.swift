@@ -50,18 +50,16 @@ struct AppInstallerContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            TabActionBar(title: "Applications") {
                 TextField("~/Downloads/Apps", text: $installer.path)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
+                    .frame(width: 260)
                 Button("Browse") { browseForFolder() }
                 Button("Scan") { scanApps() }
                     .disabled(installer.path.isEmpty)
                 if isScanning { ProgressView().scaleEffect(0.7) }
             }
-            .padding(16)
-
-            Divider()
 
             if discoveredApps.isEmpty && !isScanning {
                 Text(installer.path.isEmpty ? "Set a folder path and tap Scan" : "No apps found — tap Scan")

@@ -24,9 +24,9 @@ struct Installer {
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = pipe
-        task.launchPath = "/bin/zsh"
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
         task.arguments = ["-c", command]
-        task.launch()
+        do { try task.run() } catch { return (error.localizedDescription, -1) }
         task.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8)?
@@ -38,9 +38,9 @@ struct Installer {
     @discardableResult
     static func run(_ command: String) -> Int32 {
         let task = Process()
-        task.launchPath = "/bin/zsh"
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
         task.arguments = ["-c", command]
-        task.launch()
+        do { try task.run() } catch { return -1 }
         task.waitUntilExit()
         return task.terminationStatus
     }
