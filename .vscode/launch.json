@@ -1,44 +1,8 @@
 {
-    "configurations": [
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:Takeover}/takeover-shell",
-            "name": "Debug takeover-shell (takeover-shell)",
-            "target": "takeover-shell",
-            "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug takeover-shell (takeover-shell)"
-        },
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:Takeover}/takeover-shell",
-            "name": "Release takeover-shell (takeover-shell)",
-            "target": "takeover-shell",
-            "configuration": "release",
-            "preLaunchTask": "swift: Build Release takeover-shell (takeover-shell)"
-        },
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:Takeover}/takeover-shell",
-            "name": "Debug takeover (takeover-shell)",
-            "target": "takeover",
-            "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug takeover (takeover-shell)"
-        },
-        {
-            "type": "swift",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:Takeover}/takeover-shell",
-            "name": "Release takeover (takeover-shell)",
-            "target": "takeover",
-            "configuration": "release",
-            "preLaunchTask": "swift: Build Release takeover (takeover-shell)"
-        }
-    ]
+    // The project builds with xcodebuild (Takeover.xcodeproj at the repo root),
+    // not Swift Package Manager. Build the app or the `takeover` CLI with:
+    //   make install      # the Takeover.app
+    //   make cli           # the `takeover` command-line tool
+    "version": "0.2.0",
+    "configurations": []
 }

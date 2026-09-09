@@ -33,3 +33,8 @@ Thumbs.db
 
 # Builds
 .build
+build/
+
+# Xcode per-user state
+xcuserdata/
+*.xcuserstate
