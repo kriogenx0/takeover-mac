@@ -6,13 +6,19 @@ struct AppInstallerListView: View {
     @Query private var installers: [AppInstaller]
 
     var body: some View {
-        Group {
-            if let installer = installers.first {
-                AppInstallerContentView(installer: installer, onSave: save)
-            } else {
-                Text("Loading…")
-                    .foregroundColor(.secondary)
+        VSplitView {
+            Group {
+                if let installer = installers.first {
+                    AppInstallerContentView(installer: installer, onSave: save)
+                } else {
+                    Text("Loading…")
+                        .foregroundColor(.secondary)
+                }
             }
+            .frame(minHeight: 260)
+
+            AppRestoreListEditor()
+                .frame(minHeight: 140, idealHeight: 200)
         }
         .onAppear {
             if installers.isEmpty {
@@ -229,6 +235,99 @@ struct AppRowView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Restore list editor
+
+/// The curated "restore list" — synced in the profile and (re)installed on
+/// another Mac. Separate from the folder scanner above.
+struct AppRestoreListEditor: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \AppEntryModel.name) private var entries: [AppEntryModel]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("Sync & Restore list").font(.headline)
+                Text("installed on another Mac via Homebrew or a local installer")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    modelContext.insert(AppEntryModel(name: "New App"))
+                    persist()
+                } label: { Label("Add App", systemImage: "plus") }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            Divider()
+
+            if entries.isEmpty {
+                Text("No apps yet — Add App, set its Homebrew cask, and it'll be part of every restore.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(entries) { entry in
+                        RestoreListRow(entry: entry, onChange: persist, onDelete: {
+                            modelContext.delete(entry); persist()
+                        })
+                    }
+                }
+            }
+        }
+        .background(.bar)
+    }
+
+    private func persist() {
+        try? modelContext.save()
+        Task { @MainActor in
+            guard var settings = SettingsManager.shared.settings else { return }
+            settings.apps = entries.map {
+                AppEntryConfig(name: $0.name, source: $0.source,
+                               cask: $0.cask.isEmpty ? nil : $0.cask,
+                               masID: $0.masID.isEmpty ? nil : $0.masID)
+            }
+            try? await SettingsManager.shared.saveSettings(settings)
+        }
+    }
+}
+
+private struct RestoreListRow: View {
+    @Bindable var entry: AppEntryModel
+    var onChange: () -> Void
+    var onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("Name", text: $entry.name).textFieldStyle(.roundedBorder).frame(width: 160)
+                .onSubmit(onChange)
+
+            Picker("", selection: $entry.source) {
+                Text("Homebrew").tag("brew")
+                Text("Local").tag("local")
+                Text("App Store").tag("mas")
+            }
+            .labelsHidden().frame(width: 110)
+            .onChange(of: entry.source) { _, _ in onChange() }
+
+            if entry.source == "brew" {
+                TextField("cask id, e.g. rectangle", text: $entry.cask)
+                    .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
+                    .onSubmit(onChange)
+            } else if entry.source == "mas" {
+                TextField("App Store id", text: $entry.masID)
+                    .textFieldStyle(.roundedBorder).onSubmit(onChange)
+            } else {
+                Text("matched by name in the folder above")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Spacer()
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+            }.buttonStyle(.plain).foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }

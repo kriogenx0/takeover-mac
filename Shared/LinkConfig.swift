@@ -43,3 +43,17 @@ struct AppInstallerConfig: Codable {
     var name: String
     var path: String
 }
+
+/// One entry in the synced "restore list" (see AppEntryModel). Persisted in
+/// SettingsYaml as `apps:`.
+struct AppEntryConfig: Codable {
+    var name: String
+    var source: String
+    var cask: String?
+    var masID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, source, cask
+        case masID = "mas_id"
+    }
+}

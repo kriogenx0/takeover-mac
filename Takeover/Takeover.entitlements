@@ -11,6 +11,12 @@
 
 	Full Disk Access is granted by the user in System Settings > Privacy &
 	Security, not via an entitlement.
+
+	Sign in with Apple: to enable it, add
+	    <key>com.apple.developer.applesignin</key><array><string>Default</string></array>
+	here AND turn on the "Sign in with Apple" capability for App ID
+	alexvaos.Takeover on the Apple developer portal (team K2F4FTM2XQ).
+	Until then the Apple button in AccountView is inert — use email/password.
 	-->
 </dict>
 </plist>

@@ -12,12 +12,14 @@ enum AppTab: String, CaseIterable {
     case links
     case macDefaults
     case applications
+    case restore
 
     var title: String {
         switch self {
         case .links: return "Links"
         case .macDefaults: return "Mac Defaults"
         case .applications: return "Applications"
+        case .restore: return "Restore"
         }
     }
 
@@ -26,16 +28,18 @@ enum AppTab: String, CaseIterable {
         case .links: return "link"
         case .macDefaults: return "gearshape"
         case .applications: return "app.badge.checkmark"
+        case .restore: return "arrow.clockwise.icloud"
         }
     }
 }
 
 struct ContentView: View {
     @AppStorage("takeover.activeTab") private var activeTab: AppTab = .links
+    @State private var showAccount = false
 
     var body: some View {
         VStack(spacing: 0) {
-            MainTabBar(activeTab: $activeTab)
+            MainTabBar(activeTab: $activeTab, showAccount: $showAccount)
 
             Group {
                 switch activeTab {
@@ -45,6 +49,8 @@ struct ContentView: View {
                     MacDefaultListView()
                 case .applications:
                     AppInstallerListView()
+                case .restore:
+                    RestoreView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -57,6 +63,9 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
             }
         }
+        .sheet(isPresented: $showAccount) {
+            AccountView(isPresented: $showAccount)
+        }
     }
 }
 
@@ -68,6 +77,7 @@ struct ContentView: View {
 /// each tab's `.toolbar` content.
 struct MainTabBar: View {
     @Binding var activeTab: AppTab
+    @Binding var showAccount: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,6 +85,8 @@ struct MainTabBar: View {
                 ForEach(AppTab.allCases, id: \.self) { tab in
                     tabButton(tab)
                 }
+                Spacer()
+                AccountButton(showAccount: $showAccount)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -142,5 +154,7 @@ struct TabActionBar<Content: View>: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [LinkItem.self, MacDefault.self, AppInstaller.self], inMemory: true)
+        .environmentObject(AccountManager.shared)
+        .environmentObject(ProfileSyncManager.shared)
+        .modelContainer(for: [LinkItem.self, MacDefault.self, AppInstaller.self, AppEntryModel.self], inMemory: true)
 }

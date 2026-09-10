@@ -13,12 +13,15 @@ import AppKit
 struct TakeoverApp: App {
     @StateObject private var settingsManager = SettingsManager.shared
     @State private var needsStorageSetup = StorageLocation.load() == nil
+    @StateObject private var account = AccountManager.shared
+    @StateObject private var profileSync = ProfileSyncManager.shared
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             LinkItem.self,
             MacDefault.self,
             AppInstaller.self,
+            AppEntryModel.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -32,9 +35,15 @@ struct TakeoverApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(account)
+                .environmentObject(profileSync)
                 .task {
                     await checkPermissionsOnStartup()
                     await Repository.shared.load()
+                    await account.refresh()
+                    if account.isSignedIn {
+                        await profileSync.registerThisMac()
+                    }
                     if !needsStorageSetup {
                         await loadFromStorage()
                     }
@@ -175,6 +184,21 @@ struct TakeoverApp: App {
         for config in settings.appInstallers ?? [] {
             if !existingInstallerNames.contains(config.name) {
                 context.insert(AppInstaller(name: config.name, path: expandTilde(config.path)))
+            }
+        }
+
+        // Sync the app restore-list
+        let entryDescriptor = FetchDescriptor<AppEntryModel>()
+        let existingEntries = (try? context.fetch(entryDescriptor)) ?? []
+        let existingEntryNames = Set(existingEntries.map { $0.name })
+        for config in settings.apps ?? [] {
+            if !existingEntryNames.contains(config.name) {
+                context.insert(AppEntryModel(
+                    name: config.name,
+                    source: config.source,
+                    cask: config.cask ?? "",
+                    masID: config.masID ?? ""
+                ))
             }
         }
 

@@ -12,11 +12,14 @@ struct SettingsYaml: Codable {
     var links: [LinkConfig]
     var macDefaults: [MacDefaultConfig]?
     var appInstallers: [AppInstallerConfig]?
+    /// The synced "restore list" (see AppEntryModel).
+    var apps: [AppEntryConfig]?
 
     enum CodingKeys: String, CodingKey {
         case links
         case macDefaults = "mac_defaults"
         case appInstallers = "app_installers"
+        case apps
     }
 }
 
@@ -107,6 +110,7 @@ class SettingsManager: ObservableObject {
             self.settings = settings
         }
 
+        syncProfileToAccount(settings)
         if location.provider == .takeoverCloud {
             await TakeoverCloud.shared.push(settings)
         }
@@ -130,6 +134,37 @@ class SettingsManager: ObservableObject {
     private func writeMacDefaults(_ macDefaults: [MacDefaultConfig]) throws {
         let yaml = try YAMLEncoder().encode(MacDefaultsYaml(macDefaults: macDefaults))
         try yaml.write(to: macDefaultsFileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// When signed in, push this Mac's setup to the account (debounced). No-op
+    /// otherwise. Mac-default rows are enriched with domain/key/type from the
+    /// catalog so the profile is self-contained on the restoring Mac.
+    private func syncProfileToAccount(_ settings: SettingsYaml) {
+        let catalog = Dictionary(
+            MacDefaultCatalog.shared.entries.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let defaults: [Profile.MacDefaultEntry] = (settings.macDefaults ?? []).compactMap { cfg in
+            guard let value = cfg.value, !value.isEmpty, let e = catalog[cfg.name] else { return nil }
+            return Profile.MacDefaultEntry(
+                name: e.name, domain: e.domain, key: e.key, type: e.type,
+                value: value, hostFlag: e.hostFlag ?? "", postCommand: e.postCommand ?? "")
+        }
+        let links = settings.links.map {
+            Profile.LinkEntry(name: $0.name, from: $0.from, to: $0.to, defaults: $0.defaults ?? "")
+        }
+        let apps = (settings.apps ?? []).map {
+            Profile.AppEntry(
+                name: $0.name,
+                source: Profile.AppSource(rawValue: $0.source) ?? .brew,
+                cask: $0.cask, masID: $0.masID)
+        }
+        let profile = Profile(version: 1, macDefaults: defaults, links: links, apps: apps)
+
+        Task { @MainActor in
+            ProfileSyncManager.shared.schedulePush(profile)
+        }
     }
 
     private func createEmptySettings(at url: URL) throws {
