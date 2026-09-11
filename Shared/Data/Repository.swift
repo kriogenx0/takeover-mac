@@ -72,12 +72,10 @@ class Repository {
     private(set) var isLoading = false
     private(set) var error: Error?
 
-    /// App catalog published by takeover-api; the old JSON in this repo is kept
-    /// as a fallback until the API serves the file.
-    private let sources = [
-        RemoteCatalog.catalogURL("apps.yaml"),
-        URL(string: "https://raw.githubusercontent.com/kriogenx0/takeover/main/api/repository.json")!,
-    ]
+    /// Prefer the API repository, with the published catalog as a fallback.
+    private var sources: [URL] {
+        [URL(string: "\(APIClient.baseURL)/repository")!, RemoteCatalog.catalogURL("apps.yaml")]
+    }
 
     private init() {}
 
