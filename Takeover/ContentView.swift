@@ -34,8 +34,12 @@ enum AppTab: String, CaseIterable {
 }
 
 struct ContentView: View {
+    @EnvironmentObject var account: AccountManager
     @AppStorage("takeover.activeTab") private var activeTab: AppTab = .links
+    @AppStorage("takeover.hasSeenWelcome") private var hasSeenWelcome = false
     @State private var showAccount = false
+    @State private var showWelcome = false
+    @State private var welcomeWantsSignIn = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,6 +69,26 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAccount) {
             AccountView(isPresented: $showAccount)
+        }
+        // Offer to sign in (or not) exactly once, the first time the app is
+        // opened signed out — but only once we actually know it's signed
+        // out (hasCheckedAuth), not on the initial always-signed-out state.
+        .onChange(of: account.hasCheckedAuth) { _, checked in
+            if checked && !account.isSignedIn && !hasSeenWelcome {
+                hasSeenWelcome = true
+                showWelcome = true
+            }
+        }
+        .sheet(isPresented: $showWelcome, onDismiss: {
+            if welcomeWantsSignIn {
+                welcomeWantsSignIn = false
+                showAccount = true
+            }
+        }) {
+            WelcomeView(
+                onSignIn: { welcomeWantsSignIn = true; showWelcome = false },
+                onContinue: { showWelcome = false }
+            )
         }
     }
 }

@@ -8,6 +8,10 @@ final class AccountManager: ObservableObject {
     @Published private(set) var currentUser: APIUser?
     @Published var authError: String?
     @Published var isLoadingAuth = false
+    /// Flips true once `refresh()` has run its first time this launch — lets
+    /// the UI wait for a real answer before deciding whether to prompt for
+    /// sign-in, instead of racing the initial (always signed-out) state.
+    @Published private(set) var hasCheckedAuth = false
 
     var isSignedIn: Bool { currentUser != nil && APIClient.isSignedIn }
 
@@ -15,6 +19,7 @@ final class AccountManager: ObservableObject {
 
     /// Called on launch: if a token is stored, confirm it still works.
     func refresh() async {
+        defer { hasCheckedAuth = true }
         guard APIClient.isSignedIn else { return }
         do {
             currentUser = try await APIClient.me()
