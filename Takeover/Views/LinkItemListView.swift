@@ -23,7 +23,7 @@ struct LinkItemListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabActionBar(title: "Links") {
+            TabActionBar(title: "Sync Settings") {
                 Button(action: { withAnimation { sidebarVisible.toggle() } }) {
                     Image(systemName: "sidebar.left")
                 }
@@ -48,7 +48,7 @@ struct LinkItemListView: View {
             })
         }
         .alert(
-            "Link operation failed",
+            "Sync Setting operation failed",
             isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
         ) {
             Button("OK", role: .cancel) { errorMessage = nil }
@@ -59,24 +59,41 @@ struct LinkItemListView: View {
 
     private var linkItemsContent: some View {
         HStack(spacing: 0) {
-            if sidebarVisible && !linkItems.isEmpty {
-                List(selection: $linkItemSelection) {
-                    ForEach(linkItems, id: \.self) { linkItem in
-                        Text(linkItem.name)
-                            .tag(linkItem)
-                            .contextMenu {
-                                Button("Install") { onRun(linkItem: linkItem) }
-                                Button("Uninstall") { onUninstall(linkItem: linkItem) }
-                                Divider()
-                                Button("Delete", role: .destructive) { onDelete(linkItem: linkItem) }
+            if sidebarVisible {
+                Group {
+                    if linkItems.isEmpty {
+                        Text("No Sync Settings")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List(selection: $linkItemSelection) {
+                            ForEach(linkItems, id: \.self) { linkItem in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(linkItem.name)
+                                        .fontWeight(.medium)
+                                    if !linkItem.from.isEmpty {
+                                        Text(linkItem.from)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .tag(linkItem)
+                                .contextMenu {
+                                    Button("Install") { onRun(linkItem: linkItem) }
+                                    Button("Uninstall") { onUninstall(linkItem: linkItem) }
+                                    Divider()
+                                    Button("Delete", role: .destructive) { onDelete(linkItem: linkItem) }
+                                }
                             }
-                    }
-                    .onDelete(perform: deleteItems)
-                }
-                .listStyle(.sidebar)
-                .onAppear {
-                    if linkItemSelection == nil && !linkItems.isEmpty {
-                        linkItemSelection = linkItems.first
+                            .onDelete(perform: deleteItems)
+                        }
+                        .listStyle(.sidebar)
+                        .onAppear {
+                            if linkItemSelection == nil && !linkItems.isEmpty {
+                                linkItemSelection = linkItems.first
+                            }
+                        }
                     }
                 }
                 .frame(minWidth: 180, idealWidth: 200, maxWidth: 300)
@@ -93,11 +110,11 @@ struct LinkItemListView: View {
                         onUninstall: onUninstall
                     )
                 } else {
-                    Text("No Link Items")
+                    Text("Select a Sync Setting")
                         .foregroundColor(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

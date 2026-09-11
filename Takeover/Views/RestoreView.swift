@@ -119,7 +119,7 @@ struct RestoreView: View {
                                 title: d.name, subtitle: "\(d.domain) \(d.key) = \(d.value)")
                         }
                     }
-                    section("Links", picked: $pickedLinks, ids: profile.links.map(\.id)) {
+                    section("Sync Settings", picked: $pickedLinks, ids: profile.links.map(\.id)) {
                         ForEach(profile.links) { l in
                             row(id: l.id, picked: $pickedLinks, title: l.name, subtitle: "\(l.from) → \(l.to)")
                         }

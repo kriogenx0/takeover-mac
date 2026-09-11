@@ -16,7 +16,7 @@ enum AppTab: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .links: return "Links"
+        case .links: return "Sync Settings"
         case .macDefaults: return "Mac Defaults"
         case .applications: return "Applications"
         case .restore: return "Restore"

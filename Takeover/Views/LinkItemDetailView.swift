@@ -48,7 +48,7 @@ struct LinkItemDetailView: View {
 
             // Symlink Paths Section
             VStack(alignment: .leading, spacing: 20) {
-                Text("Link Configuration")
+                Text("Sync Setting Configuration")
                     .font(.headline)
 
                 // FROM Path (Source)
