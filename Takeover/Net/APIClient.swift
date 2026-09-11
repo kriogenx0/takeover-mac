@@ -23,9 +23,11 @@ enum APIClient {
 
     // MARK: - Auth
 
-    static func register(email: String, password: String, username: String) async throws -> AuthResponse {
+    // No username on the wire either — the server derives one from the email
+    // (User.unique_username_from) so it still has a display name internally.
+    static func register(email: String, password: String) async throws -> AuthResponse {
         let response: AuthResponse = try await send("auth/register", "POST", body: [
-            "email": email, "password": password, "username": username,
+            "email": email, "password": password,
         ])
         token = response.token
         return response

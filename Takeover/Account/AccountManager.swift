@@ -24,12 +24,12 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    func register(email: String, password: String, username: String) async {
-        await run { try await APIClient.register(email: email, password: password, username: username) }
+    func register(email: String, password: String) async {
+        await run { try await APIClient.register(email: email, password: password) }
     }
 
-    func login(login: String, password: String) async {
-        await run { try await APIClient.login(login: login, password: password) }
+    func login(email: String, password: String) async {
+        await run { try await APIClient.login(login: email, password: password) }
     }
 
     func loginWithApple(idToken: String, email: String?) async {

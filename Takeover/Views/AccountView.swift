@@ -6,8 +6,6 @@ struct AccountView: View {
     @EnvironmentObject var account: AccountManager
 
     @State private var isRegister = false
-    @State private var login = ""
-    @State private var username = ""
     @State private var email = ""
     @State private var password = ""
 
@@ -23,12 +21,7 @@ struct AccountView: View {
                 .multilineTextAlignment(.center)
 
             VStack(alignment: .leading, spacing: 12) {
-                if isRegister {
-                    field("Username", text: $username, placeholder: "e.g. alex")
-                    field("Email", text: $email, placeholder: "you@example.com")
-                } else {
-                    field("Email or username", text: $login, placeholder: "you@example.com")
-                }
+                field("Email", text: $email, placeholder: "you@example.com")
                 field("Password", text: $password, placeholder: "••••••••", secure: true)
             }
 
@@ -80,16 +73,14 @@ struct AccountView: View {
     }
 
     private var submitDisabled: Bool {
-        isRegister
-            ? username.isEmpty || email.isEmpty || password.isEmpty
-            : login.isEmpty || password.isEmpty
+        email.isEmpty || password.isEmpty
     }
 
     private func submit() async {
         if isRegister {
-            await account.register(email: email, password: password, username: username)
+            await account.register(email: email, password: password)
         } else {
-            await account.login(login: login, password: password)
+            await account.login(email: email, password: password)
         }
         if account.authError == nil { isPresented = false }
     }
