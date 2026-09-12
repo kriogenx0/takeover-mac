@@ -29,6 +29,10 @@ struct MacDefaultCatalogEntry: Codable {
     }
 }
 
+/// The `defaults write` catalog shown in the Mac Defaults tab. Fetched from
+/// takeover-api (GET /api/v1/mac_defaults, same JSON shape as the old bundled
+/// YAML), cached for a day, falling back to a stale cache — and, failing
+/// that, the bundled YAML — so a fresh install still works offline.
 class MacDefaultCatalog {
     static let shared = MacDefaultCatalog()
     private(set) var entries: [MacDefaultCatalogEntry] = []
@@ -40,7 +44,7 @@ class MacDefaultCatalog {
     func load() async throws {
         let all = try await RemoteCatalog.load(
             [MacDefaultCatalogEntry].self,
-            sources: [RemoteCatalog.catalogURL("mac-defaults.yaml")],
+            sources: [URL(string: "\(APIClient.baseURL)/mac_defaults")!, RemoteCatalog.catalogURL("mac-defaults.yaml")],
             cacheName: "mac-defaults-catalog",
             bundled: Bundle.main.url(forResource: "mac-defaults-catalog", withExtension: "yaml")
         )

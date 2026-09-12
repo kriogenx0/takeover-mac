@@ -21,6 +21,27 @@ struct SettingsYaml: Codable {
         case appInstallers = "app_installers"
         case apps
     }
+
+    init(links: [LinkConfig], macDefaults: [MacDefaultConfig]? = nil,
+         appInstallers: [AppInstallerConfig]? = nil, apps: [AppEntryConfig]? = nil) {
+        self.links = links
+        self.macDefaults = macDefaults
+        self.appInstallers = appInstallers
+        self.apps = apps
+    }
+
+    // `links` tolerates a YAML `links:` with nothing after it (parses as
+    // null, not []) — createEmptySettings used to write exactly that, which
+    // made every fresh install throw here and silently abort the whole
+    // settings/catalog sync pipeline (see loadSettings's catch). Treat
+    // missing-or-null the same as an empty list instead of failing.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        links = try container.decodeIfPresent([LinkConfig].self, forKey: .links) ?? []
+        macDefaults = try container.decodeIfPresent([MacDefaultConfig].self, forKey: .macDefaults)
+        appInstallers = try container.decodeIfPresent([AppInstallerConfig].self, forKey: .appInstallers)
+        apps = try container.decodeIfPresent([AppEntryConfig].self, forKey: .apps)
+    }
 }
 
 class SettingsManager: ObservableObject {
@@ -168,6 +189,9 @@ class SettingsManager: ObservableObject {
     }
 
     private func createEmptySettings(at url: URL) throws {
+        // `links:` with nothing after it parses as YAML null, not an empty
+        // sequence — decodes fine now (see SettingsYaml.init(from:)), but
+        // write valid empty-array YAML regardless of how lenient the reader is.
         let defaultSettings = """
         links: []
         """

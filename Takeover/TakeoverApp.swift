@@ -23,7 +23,19 @@ struct TakeoverApp: App {
             AppInstaller.self,
             AppEntryModel.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        // An unnamed ModelConfiguration defaults to
+        // ~/Library/Application Support/default.store — not namespaced by
+        // bundle id, so it collides with *any* other non-sandboxed SwiftData
+        // app on the machine that also takes the default (confirmed: this
+        // exact path was found holding a different app's model entirely,
+        // silently wiping Takeover's). Use the same Takeover/ subdirectory
+        // SettingsManager already stores the settings YAML in.
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Takeover", isDirectory: true)
+        try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        let storeURL = appSupport.appendingPathComponent("Takeover.store")
+        let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])

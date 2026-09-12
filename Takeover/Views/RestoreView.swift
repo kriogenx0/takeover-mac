@@ -6,8 +6,13 @@ struct RestoreView: View {
     @EnvironmentObject var sync: ProfileSyncManager
     @Environment(\.modelContext) private var modelContext
     @Query private var installers: [AppInstaller]
+    @Query(sort: \LinkItem.name) private var currentLinks: [LinkItem]
+    @Query(sort: \MacDefault.name) private var currentDefaults: [MacDefault]
+    @Query(sort: \AppEntryModel.name) private var currentApps: [AppEntryModel]
 
     @State private var showAccount = false
+    @State private var isSavingState = false
+    @State private var saveStateMessage: String?
     @State private var selectedComputerID: Int?
     @State private var profile: Profile?
     @State private var loadingProfile = false
@@ -26,6 +31,16 @@ struct RestoreView: View {
         VStack(spacing: 0) {
             TabActionBar(title: "Restore") {
                 if account.isSignedIn {
+                    if let saveStateMessage {
+                        Text(saveStateMessage).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if isSavingState { ProgressView().scaleEffect(0.7) }
+                    Button {
+                        Task { await saveCurrentState() }
+                    } label: { Label("Save Current State", systemImage: "square.and.arrow.up") }
+                    .help("Save this Mac's Sync Settings, Mac Defaults, and Applications to your account now")
+                    .disabled(isSavingState)
+
                     Button {
                         Task { await sync.loadComputers() }
                     } label: { Label("Refresh", systemImage: "arrow.clockwise") }
@@ -189,6 +204,31 @@ struct RestoreView: View {
     }
 
     // MARK: actions
+
+    /// Explicit "save now" — builds a profile from this Mac's current Sync
+    /// Settings / Mac Defaults / Applications and pushes it immediately
+    /// (unlike SettingsManager's debounced push-on-edit, this always sends
+    /// the full current state right away, whether or not anything changed
+    /// since the last edit).
+    private func saveCurrentState() async {
+        isSavingState = true
+        saveStateMessage = nil
+        defer { isSavingState = false }
+
+        let profile = Profile.snapshot(
+            defaults: currentDefaults.filter { !$0.value.isEmpty },
+            links: currentLinks,
+            apps: currentApps
+        )
+        await sync.push(profile)
+
+        if let err = sync.lastPushError {
+            saveStateMessage = "Save failed — \(err)"
+        } else {
+            saveStateMessage = "Saved just now"
+            await sync.loadComputers()
+        }
+    }
 
     private func loadProfile(_ id: Int?) async {
         outcomes = [:]; summary = nil

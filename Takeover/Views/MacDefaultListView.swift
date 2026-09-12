@@ -37,6 +37,7 @@ struct MacDefaultListView: View {
                     if macDefaults.isEmpty {
                         Text("No Mac Defaults")
                             .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         let grouped = Dictionary(grouping: macDefaults, by: { displayDomain($0.domain) })
                         let domains = grouped.keys.sorted { a, b in a == "Global" ? true : b == "Global" ? false : a < b }
@@ -110,7 +111,7 @@ struct MacDefaultListView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

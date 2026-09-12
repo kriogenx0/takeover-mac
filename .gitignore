@@ -34,6 +34,7 @@ Thumbs.db
 # Builds
 .build
 build/
+*.profraw
 
 # Xcode per-user state
 xcuserdata/
