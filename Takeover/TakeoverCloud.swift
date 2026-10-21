@@ -32,13 +32,13 @@ final class TakeoverCloud: ObservableObject {
     // MARK: - Account
 
     func signIn(login: String, password: String) async throws {
-        let response: AuthResponse = try await request("POST", "auth/login", body: ["login": login, "password": password], authorized: false)
+        let response: CloudAuthResponse = try await request("POST", "auth/login", body: ["login": login, "password": password], authorized: false)
         token = response.token
         try await refreshAccount()
     }
 
     func register(email: String, password: String) async throws {
-        let response: AuthResponse = try await request("POST", "auth/register", body: ["email": email, "password": password], authorized: false)
+        let response: CloudAuthResponse = try await request("POST", "auth/register", body: ["email": email, "password": password], authorized: false)
         token = response.token
         try await refreshAccount()
     }
@@ -186,7 +186,7 @@ struct CloudSubscription: Decodable {
     var needsPayment: Bool { status != "admin" && status != "trialing" && status != "active" }
 }
 
-private struct AuthResponse: Decodable {
+private struct CloudAuthResponse: Decodable {
     let token: String
 }
 
