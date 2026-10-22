@@ -12,7 +12,7 @@ import AppKit
 @main
 struct TakeoverApp: App {
     @StateObject private var settingsManager = SettingsManager.shared
-    @State private var needsStorageSetup = StorageLocation.load() == nil
+    @State private var needsStorageSetup = !TakeoverApp.adoptDetectedStorage()
     @StateObject private var account = AccountManager.shared
     @StateObject private var profileSync = ProfileSyncManager.shared
 
@@ -79,6 +79,24 @@ struct TakeoverApp: App {
 
         Settings {
             StorageSetupView(isFirstLaunch: false)
+        }
+    }
+
+    /// First launch on this Mac: when exactly one existing settings folder
+    /// is found (e.g. synced through iCloud from another Mac), use it without
+    /// asking. Otherwise the setup sheet asks, or offers sign-in. Returns
+    /// whether a location is now saved.
+    private static func adoptDetectedStorage() -> Bool {
+        if StorageLocation.load() != nil { return true }
+        let found = StorageLocation.detectExisting()
+        guard found.count == 1 else { return false }
+        do {
+            try found[0].location.save()
+            print("Using existing Takeover settings at: \(found[0].location.rootPath)")
+            return true
+        } catch {
+            print("⚠️ Could not save storage location: \(error.localizedDescription)")
+            return false
         }
     }
 

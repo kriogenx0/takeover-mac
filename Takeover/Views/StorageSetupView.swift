@@ -19,10 +19,14 @@ struct StorageSetupView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    /// Existing settings found on this Mac, offered first on first launch.
+    private let detected: [DetectedStorage]
+
     init(isFirstLaunch: Bool, onDone: (() -> Void)? = nil) {
         self.isFirstLaunch = isFirstLaunch
         self.onDone = onDone
-        let current = StorageLocation.current
+        detected = isFirstLaunch ? StorageLocation.detectExisting() : []
+        let current = detected.first?.location ?? StorageLocation.current
         _provider = State(initialValue: current.provider)
         _folderPath = State(initialValue: current.folderPath ?? StorageLocation.defaultFolderPath)
     }
@@ -30,12 +34,28 @@ struct StorageSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(isFirstLaunch ? "Where should Takeover keep your settings?" : "Settings Storage")
+                Text(title)
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Your links, macOS defaults and apps are saved as YAML files in this location, so another Mac can pick them up.")
+                Text(subtitle)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !detected.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Found on this Mac")
+                        .font(.headline)
+                    ForEach(detected) { found in
+                        DetectedRow(found: found, isSelected: selectedLocation == found.location) {
+                            provider = found.location.provider
+                            folderPath = found.location.folderPath ?? StorageLocation.defaultFolderPath
+                        }
+                    }
+                    Text("Or keep them somewhere else")
+                        .font(.headline)
+                        .padding(.top, 8)
+                }
             }
 
             VStack(spacing: 8) {
@@ -91,6 +111,22 @@ struct StorageSetupView: View {
         .frame(width: 520)
     }
 
+    private var title: String {
+        guard isFirstLaunch else { return "Settings Storage" }
+        if detected.isEmpty { return "Where should Takeover keep your settings?" }
+        return "Use your existing Takeover settings?"
+    }
+
+    private var subtitle: String {
+        guard isFirstLaunch else {
+            return "Your links, macOS defaults and apps are saved as YAML files in this location, so another Mac can pick them up."
+        }
+        if detected.isEmpty {
+            return "No Takeover settings were found on this Mac. Choose where to keep them, or sign in to Takeover Cloud to restore them from another Mac."
+        }
+        return "Takeover settings were found on this Mac. Pick the ones to use, or choose another location."
+    }
+
     private var selectedLocation: StorageLocation {
         StorageLocation(provider: provider, folderPath: provider == .folder ? folderPath : nil)
     }
@@ -109,8 +145,7 @@ struct StorageSetupView: View {
         panel.allowsMultipleSelection = false
         panel.message = "Choose a folder for your Takeover settings"
         if panel.runModal() == .OK, let url = panel.url {
-            let home = PathUtility.getRealHomeDirectory()
-            folderPath = url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
+            folderPath = PathUtility.abbreviateRealHome(url.path)
         }
     }
 
@@ -181,6 +216,41 @@ private struct ProviderRow: View {
         .buttonStyle(.plain)
         .disabled(!isAvailable)
         .opacity(isAvailable ? 1 : 0.5)
+    }
+}
+
+private struct DetectedRow: View {
+    let found: DetectedStorage
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: found.location.provider == .folder ? "folder.badge.gearshape" : found.location.provider.systemImage)
+                    .font(.title2)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(found.location.rootPath)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("Updated \(found.modifiedAt.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+            }
+            .padding(10)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

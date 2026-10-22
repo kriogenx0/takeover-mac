@@ -126,10 +126,12 @@ struct StorageLocation: Codable, Equatable {
         return try? YAMLDecoder().decode(StorageLocation.self, from: yaml)
     }
 
-    /// The saved choice, or the pre-picker default (iCloud when present,
-    /// otherwise the local Application Support folder) for existing installs.
+    /// The saved choice; before one is saved, the most recently updated
+    /// settings found on disk, then the pre-picker default (iCloud when
+    /// present, otherwise the local Application Support folder).
     static var current: StorageLocation {
         if let saved = load() { return saved }
+        if let found = detectExisting().first { return found.location }
         if isAvailable(.iCloud) { return StorageLocation(provider: .iCloud) }
         return StorageLocation(provider: .folder, folderPath: localSupportPath)
     }
@@ -140,5 +142,71 @@ struct StorageLocation: Codable, Equatable {
         let yaml = try YAMLEncoder().encode(self)
         try yaml.write(to: url, atomically: true, encoding: .utf8)
         Self.cached = .some(self)
+    }
+}
+
+/// Takeover settings already on disk, e.g. synced from another Mac before the
+/// user has picked a location on this one.
+struct DetectedStorage: Equatable, Identifiable {
+    var location: StorageLocation
+    /// When the settings file was last written, to rank multiple finds.
+    var modifiedAt: Date
+
+    var id: String { location.expandedRootPath }
+}
+
+extension StorageLocation {
+    private static let settingsFileNames = ["takeover-settings.yaml", "mac-defaults.yaml"]
+
+    private static var detectedCache: [DetectedStorage]?
+
+    /// Every known place that already holds Takeover settings, most recently
+    /// updated first. Scanned once per launch.
+    static func detectExisting() -> [DetectedStorage] {
+        if let detectedCache { return detectedCache }
+        var seen = Set<String>()
+        var found: [DetectedStorage] = []
+        for location in detectionCandidates() {
+            let root = location.expandedRootPath
+            let resolved = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+            guard !seen.contains(resolved), let modifiedAt = settingsModifiedAt(in: root) else { continue }
+            seen.insert(resolved)
+            found.append(DetectedStorage(location: location, modifiedAt: modifiedAt))
+        }
+        found.sort { $0.modifiedAt > $1.modifiedAt }
+        detectedCache = found
+        return found
+    }
+
+    /// iCloud Drive, Dropbox, other File Provider drives (Google Drive,
+    /// OneDrive, Box…), then plain folders, in that order of preference.
+    private static func detectionCandidates() -> [StorageLocation] {
+        var candidates = [StorageLocation(provider: .iCloud)]
+        if dropboxRoot != nil { candidates.append(StorageLocation(provider: .dropbox)) }
+        // A second Dropbox folder (legacy ~/Dropbox) only shows up when it
+        // isn't the same folder as the one above.
+        candidates += dropboxCandidates.map { StorageLocation(provider: .folder, folderPath: "\($0)/Takeover") }
+
+        let cloudStorage = PathUtility.expandTildeToRealHome("~/Library/CloudStorage")
+        let drives = (try? FileManager.default.contentsOfDirectory(atPath: cloudStorage)) ?? []
+        for drive in drives.sorted() where !drive.hasPrefix("Dropbox") && !drive.hasPrefix(".") {
+            // Google Drive nests the user's files under "My Drive".
+            for sub in ["Takeover", "My Drive/Takeover"] {
+                candidates.append(StorageLocation(provider: .folder, folderPath: "~/Library/CloudStorage/\(drive)/\(sub)"))
+            }
+        }
+
+        candidates += [defaultFolderPath, "~/Documents/Takeover", localSupportPath].map {
+            StorageLocation(provider: .folder, folderPath: $0)
+        }
+        return candidates
+    }
+
+    private static func settingsModifiedAt(in directory: String) -> Date? {
+        settingsFileNames.compactMap { name -> Date? in
+            let path = (directory as NSString).appendingPathComponent(name)
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
+            return attributes[.modificationDate] as? Date ?? .distantPast
+        }.max()
     }
 }

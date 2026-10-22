@@ -13,14 +13,27 @@ DEV_APP     := $(BUILD_DIR)/Build/Products/Debug/$(APP).app
 RELEASE_APP := $(BUILD_DIR)/Build/Products/Release/$(APP).app
 CLI_SRC     := $(BUILD_DIR)/Build/Products/Release/$(CLI_NAME)
 
+DMG         := $(BUILD_DIR)/$(APP).dmg
+
 INSTALL_DST := /Applications/$(APP).app
 PREFIX      ?= /usr/local
 CLI_DST     := $(PREFIX)/bin/$(CLI_NAME)
 
+# A Mac without an "Apple Development" identity (e.g. a fresh Mac with only
+# Xcode installed) signs Release builds ad hoc instead, so build/install/cli
+# still work there. Ad hoc signatures change on every build, so Full Disk
+# Access has to be granted again after each reinstall.
+HAS_DEV_ID  := $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q "Apple Development" && echo yes)
+ifeq ($(HAS_DEV_ID),yes)
+SIGN_FLAGS  :=
+else
+SIGN_FLAGS  := CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+endif
+
 .DEFAULT_GOAL := all
 
 .PHONY: all help setup dev open close test build install uninstall reinstall \
-        cli install-cli verify-sign reset-tcc clean
+        package cli install-cli verify-sign reset-tcc clean
 
 ##@ Common
 
@@ -40,8 +53,8 @@ setup: ## Set up the environment if needed: check the toolchain, resolve SPM dep
 	@echo "Resolving Swift package dependencies..."
 	@xcodebuild -resolvePackageDependencies -project $(PROJECT) -scheme $(SCHEME) -quiet
 	@if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Apple Development"; then \
-		echo "warning: no \"Apple Development\" signing identity found — Release builds"; \
-		echo "         (build/install/cli) will fail to sign. Debug builds still work."; \
+		echo "note: no \"Apple Development\" signing identity found — Release builds"; \
+		echo "      (build/install/cli) will be signed ad hoc."; \
 	fi
 
 ##@ Development
@@ -72,7 +85,7 @@ test: ## Run the unit-test suite.
 
 build: ## Build for production (Release), no install.
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
-		-derivedDataPath $(BUILD_DIR) -quiet build
+		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS)
 	@echo "==> $(RELEASE_APP)"
 
 install: build ## Build for production and install to /Applications.
@@ -94,11 +107,23 @@ uninstall: close ## make close. Remove from /Applications, if installed.
 
 reinstall: uninstall install ## make uninstall, make install.
 
+# For installing on another Mac without Xcode: copy the .dmg over, open it and
+# drag Takeover to Applications. It isn't notarized, so the first launch
+# needs right-click > Open (or System Settings > Privacy & Security > Open Anyway).
+package: build ## Build for production and package it as build/Takeover.dmg.
+	@rm -rf "$(BUILD_DIR)/dmg" "$(DMG)"
+	mkdir -p "$(BUILD_DIR)/dmg"
+	ditto "$(RELEASE_APP)" "$(BUILD_DIR)/dmg/$(APP).app"
+	ln -s /Applications "$(BUILD_DIR)/dmg/Applications"
+	hdiutil create -volname "$(APP)" -srcfolder "$(BUILD_DIR)/dmg" -ov -format UDZO "$(DMG)" -quiet
+	@rm -rf "$(BUILD_DIR)/dmg"
+	@echo "==> $(DMG)"
+
 ##@ CLI
 
 cli: ## Build the `takeover` command-line tool (TakeoverCLI target).
 	xcodebuild -project $(PROJECT) -scheme $(CLI_SCHEME) -configuration Release \
-		-derivedDataPath $(BUILD_DIR) -quiet build
+		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS)
 	@echo "==> $(CLI_SRC)"
 
 install-cli: cli ## Install the CLI to $(PREFIX)/bin.
