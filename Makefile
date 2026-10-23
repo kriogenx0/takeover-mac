@@ -30,6 +30,10 @@ else
 SIGN_FLAGS  := CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
 endif
 
+# Extra xcodebuild settings for Release builds, e.g. CI passes
+# MARKETING_VERSION=1.2.0 or a Developer ID signing identity here.
+XCODE_FLAGS ?=
+
 .DEFAULT_GOAL := all
 
 .PHONY: all help setup dev open close test build install uninstall reinstall \
@@ -85,7 +89,7 @@ test: ## Run the unit-test suite.
 
 build: ## Build for production (Release), no install.
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
-		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS)
+		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS) $(XCODE_FLAGS)
 	@echo "==> $(RELEASE_APP)"
 
 install: build ## Build for production and install to /Applications.
@@ -123,7 +127,7 @@ package: build ## Build for production and package it as build/Takeover.dmg.
 
 cli: ## Build the `takeover` command-line tool (TakeoverCLI target).
 	xcodebuild -project $(PROJECT) -scheme $(CLI_SCHEME) -configuration Release \
-		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS)
+		-derivedDataPath $(BUILD_DIR) -quiet build $(SIGN_FLAGS) $(XCODE_FLAGS)
 	@echo "==> $(CLI_SRC)"
 
 install-cli: cli ## Install the CLI to $(PREFIX)/bin.

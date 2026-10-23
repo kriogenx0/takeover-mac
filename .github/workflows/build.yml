@@ -1,0 +1,118 @@
+# Builds Takeover.app on a GitHub-hosted Mac.
+#
+#   push to main / manual run  -> Takeover.dmg as a workflow artifact (Actions tab)
+#   push a tag like v1.2.0     -> GitHub Release with Takeover-1.2.0.dmg and the CLI
+#
+# Without signing secrets the app is signed ad hoc (same as `make package` on a
+# Mac with no Apple Development identity), so the first launch needs
+# right-click > Open. Add these repository secrets to get a Developer ID signed
+# and notarized build that opens normally:
+#
+#   MACOS_CERTIFICATE_P12       base64 of a "Developer ID Application" .p12
+#   MACOS_CERTIFICATE_PASSWORD  password of that .p12
+#   APPLE_TEAM_ID               e.g. K2F4FTM2XQ
+#   APPLE_ID                    Apple ID email used for notarization
+#   APPLE_APP_PASSWORD          app-specific password for that Apple ID
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # MARKETING_VERSION must be numeric; untagged builds keep the project's.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "XCODE_FLAGS=MARKETING_VERSION=$VERSION CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          else
+            echo "XCODE_FLAGS=CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build app and CLI
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          make setup
+          if [[ "$HAS_SIGNING" == "true" ]]; then
+            SIGN="CODE_SIGN_IDENTITY=Developer\ ID\ Application CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$TEAM_ID PROVISIONING_PROFILE_SPECIFIER= OTHER_CODE_SIGN_FLAGS=--timestamp"
+            make package cli SIGN_FLAGS="$SIGN" XCODE_FLAGS="$XCODE_FLAGS"
+            codesign --sign "Developer ID Application" --timestamp build/Takeover.dmg
+          else
+            make package cli XCODE_FLAGS="$XCODE_FLAGS"
+          fi
+          codesign --verify --deep --strict --verbose=2 build/Build/Products/Release/Takeover.app
+
+      - name: Notarize
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit build/Takeover.dmg --wait \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$TEAM_ID"
+          xcrun stapler staple build/Takeover.dmg
+          spctl --assess --type open --context context:primary-signature --verbose build/Takeover.dmg
+
+      - name: Collect files
+        run: |
+          mkdir -p dist
+          cp build/Takeover.dmg "dist/Takeover-${{ steps.version.outputs.version }}.dmg"
+          ditto -c -k build/Build/Products/Release/takeover "dist/takeover-cli-${{ steps.version.outputs.version }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Takeover-${{ steps.version.outputs.version }}
+          path: dist/*
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Takeover ${{ steps.version.outputs.version }}" --generate-notes
